@@ -61,18 +61,18 @@ Parameters:
     - SubnetCPublic
     - SubnetCPrivate
   AWXorSSM:
-    Description: 'Is this server going to be managed via Ansible AWX or SSM?'
+    Description: 'Is this server going to be managed via Ansible AWX or Amazon SSM'
     Type: String
-    Default: ''
-    AllowsValues:
-      - AWX (Ansible)
-      - SSM (Amazon SSM, Standalone)
+    Default: SSM
+    AllowedValues:
+    - AWX
+    - SSM
 Conditions:
   HasKeyName: !Not [!Equals [!Ref KeyName, '']]
   HasSSHAccessGroup: !Not [!Equals [!Ref SSHAccessGroup, '']]
   HasNotSSHAccessGroup: !Not [!Equals [!Ref SSHAccessCIDR, '']]
-  AWXManaged: !Equals [!Ref AWXorSSM, 'AWX']
-  SSMManaged: !Equals [!Ref AWXorSSM, 'SSM']
+  AWXManaged: !Equals [ !Ref AWXorSSM, AWX ]
+  SSMManaged: !Equals [ !Ref AWXorSSM, SSM ]
 Resources:
   ElasticIP:
     Type: 'AWS::EC2::EIP'
@@ -125,7 +125,7 @@ Resources:
           - 'sts:AssumeRole'
       Path: '/'
     Condition: SSMManaged
-    Type: 'AWX::IAM::Role'
+    Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
