@@ -1,0 +1,167 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'EC2: Standalone EC2 server with cfn-init installed as part of userconfig. Complete Base Model'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: 'Parent Stacks'
+      Parameters:
+      - ParentVPCStack
+    - Label:
+        default: 'EC2 Parameters'
+      Parameters:
+      - InstanceType
+      - AMIID
+      - Name
+      - SubnetName
+      - KeyName
+      - SSHAccessGroup
+      - SSHAccessCIDR
+      - AWXorSSM
+Parameters:
+  ParentVPCStack:
+    Description: 'Stack name of parent VPC stack based on vpc.yml template.'
+    Type: String
+  AMIID:
+    Description: 'AMI for ASG'
+    Type: String
+  KeyName:
+    Description: '(Optional) AWS Builtin Key pair of the ec2-user to establish a SSH connection to the EC2 instance.'
+    Type: String
+    Default: ''
+  InstanceType:
+    Description: 'The instance type for the EC2 instance.'
+    Type: String
+    Default: 't2.micro'
+  Name:
+    Description: '(Optional) The name for the EC2 instance.'
+    Type: String
+    Default: ''
+  SSHAccessGroup:
+    Description: '(Optional) SSH Access Security Group Name'
+    Type: String
+    Default: ''
+  SSHAccessCIDR:
+    Description: '(Optional) SSH Access IP address CIDR, If no SSH Security Group Specified'
+    Type: String
+    Default: ''
+  SubnetName:
+    Description: 'Subnet name of parent VPC stack based on vpc.yml template.'
+    Type: String
+    Default: SubnetAPublic
+    AllowedValues:
+    - SubnetADMZ
+    - SubnetAPublic
+    - SubnetAPrivate
+    - SubnetBDMZ
+    - SubnetBPublic
+    - SubnetBPrivate
+    - SubnetCDMZ
+    - SubnetCPublic
+    - SubnetCPrivate
+  AWXorSSM:
+    Description: 'Is this server going to be managed via Ansible AWX or SSM?'
+    Type: String
+    Default: ''
+    AllowsValues:
+      - AWX (Ansible)
+      - SSM (Amazon SSM, Standalone)
+Conditions:
+  HasKeyName: !Not [!Equals [!Ref KeyName, '']]
+  HasSSHAccessGroup: !Not [!Equals [!Ref SSHAccessGroup, '']]
+  HasNotSSHAccessGroup: !Not [!Equals [!Ref SSHAccessCIDR, '']]
+  AWXManaged: !Equals [!Ref AWXorSSM, 'AWX']
+  SSMManaged: !Equals [!Ref AWXorSSM, 'SSM']
+Resources:
+  ElasticIP:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      InstanceId: !Ref InstanceResource
+      Domain: vpc
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Ref Name
+      VpcId:
+        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
+  SecurityGroupInSSHGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: HasSSHAccessGroup
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp:
+        'Fn::ImportValue': !Ref SSHAccessGroup
+  SecurityGroupInSSHWorld:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: HasNotSSHAccessGroup
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: '0.0.0.0/0'
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: '/'
+      Roles:
+      - !Ref IAMRole
+  IAMRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'ec2.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      Path: '/'
+      Policies:
+      Condition: SSMManaged
+      - PolicyName: 'SSM'
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'ec2:AssociateAddress'
+            Resource:
+            - '*'
+  InstanceResource:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId: !Ref AMIID
+      InstanceType: !Ref InstanceType
+      SecurityGroupIds:
+      - !Ref SecurityGroup
+      KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
+      UserData:
+        'Fn::Base64': !Sub |
+           #!/bin/bash -x
+           apt-get update
+           cd /tmp
+           wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_amd64/amazon-ssm-agent.deb
+           sudo dpkg -i amazon-ssm-agent.deb
+           sudo systemctl enable amazon-ssm-agent
+           apt-get -y install python-pip
+           pip install awscli
+           pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+           cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource InstanceResource
+           cfn-init -v --stack ${AWS::StackName} --resource InstanceResource --region ${AWS::Region}
+      SubnetId:
+        'Fn::ImportValue': !Sub '${ParentVPCStack}-${SubnetName}'
+      Tags:
+      - Key: Name
+        Value: !Ref Name
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M

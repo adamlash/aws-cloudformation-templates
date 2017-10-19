@@ -1,0 +1,170 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VPC: highly available SSH bastion host/instance'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: 'Parent Stacks'
+      Parameters:
+      - ParentVPCStack
+    - Label:
+        default: 'EC2 Parameters'
+      Parameters:
+      - InstanceType
+      - KeyName
+      - IAMUserSSHAccess
+      - LogsRetentionInDays
+Parameters:
+  ParentVPCStack:
+    Description: 'Stack name of parent VPC stack based on vpc/vpc.yaml template.'
+    Type: String
+  KeyName:
+    Description: 'Optional key pair of the ec2-user to establish a SSH connection to the SSH bastion host/instance.'
+    Type: String
+    Default: ''
+  InstanceType:
+    Description: 'Instance type of the SSH bastion host/instance.'
+    Type: String
+    Default: 't2.micro'
+Mappings:
+  RegionMap:
+    'ap-south-1':
+      AMI: 'ami-9fc7b0f0'
+    'eu-west-2':
+      AMI: 'ami-bfe0eadb'
+    'eu-west-1':
+      AMI: 'ami-c51e3eb6'
+    'ap-northeast-2':
+      AMI: 'ami-94bb6dfa'
+    'ap-northeast-1':
+      AMI: 'ami-9f0c67f8'
+    'sa-east-1':
+      AMI: 'ami-bb40d8d7'
+    'ca-central-1':
+      AMI: 'ami-eb20928f'
+    'ap-southeast-1':
+      AMI: 'ami-4dd6782e'
+    'ap-southeast-2':
+      AMI: 'ami-28cff44b'
+    'eu-central-1':
+      AMI: 'ami-211ada4e'
+    'us-east-1':
+      AMI: 'ami-9be6f38c'
+    'us-east-2':
+      AMI: 'ami-38cd975d'
+    'us-west-1':
+      AMI: 'ami-b73d6cd7'
+    'us-west-2':
+      AMI: 'ami-1e299d7e'
+Conditions:
+  HasKeyName: !Not [!Equals [!Ref KeyName, '']]
+  HasIAMUserSSHAccess: !Equals [!Ref IAMUserSSHAccess, 'true']
+Resources:
+  EIP:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+  Logs:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      RetentionInDays: !Ref LogsRetentionInDays
+  SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: !Sub
+      - 'SSH bastion host/instance 10.180.${ClassCDMZ}.0/22'
+      - ClassCDMZ:
+          'Fn::ImportValue': !Sub '${ParentVPCStack}-ClassCDMZ'
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: '0.0.0.0/0'
+      VpcId:
+        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: '/'
+      Roles:
+      - !Ref IAMRole
+  IAMRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - 'ec2.amazonaws.com'
+          Action:
+          - 'sts:AssumeRole'
+      Path: '/'
+      Policies:
+      - PolicyName: 'ec2'
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'ec2:AssociateAddress'
+            Resource:
+            - '*'
+  LaunchConfiguration:
+    Properties:
+      AssociatePublicIpAddress: true
+      EbsOptimized: false
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      InstanceType: !Ref InstanceType
+      SecurityGroups:
+      - !Ref SecurityGroup
+      KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
+      UserData:
+        'Fn::Base64': !Sub |
+          #!/bin/bash -x
+          apt-get update
+          curl -O https://bootstrap.pypa.io/get-pip.py
+          python get-pip.py
+          pip install awscli
+          apt-get -y install python-setuptools
+          pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          ln /usr/local/bin/cfn-hup /etc/init.d/
+          initctl reload-configuration
+          chmod 700 /etc/init.d/cfn-hup
+          chown root:root /etc/init.d/cfn-hup
+          update-rc.d cfn-hup defaults
+          update-rc.d cfn-hup enable
+          INSTANCEID=$(curl -s -m 60 http://169.254.169.254/latest/meta-data/instance-id)
+          aws --region ${AWS::Region} ec2 associate-address --instance-id $INSTANCEID --allocation-id ${EIP.AllocationId} && cfn-init -v --stack ${AWS::StackName} --resource LaunchConfiguration --region ${AWS::Region}
+          cfn-signal -e $? --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+  AutoScalingGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      DesiredCapacity: 1
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      MaxSize: 1
+      MinSize: 1
+      Tags:
+      - Key: Name
+        Value: !Sub
+        - 'SSH bastion host/instance 10.180.${ClassCDMZ}.0/22'
+        - ClassCDMZ:
+            'Fn::ImportValue': !Sub '${ParentVPCStack}-ClassCDMZ'
+        PropagateAtLaunch: true
+      VPCZoneIdentifier:
+      - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetADMZ'
+      - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetBDMZ'
+Outputs:
+  SecurityGroup:
+    Description: 'Use this Security Group to reference incoming traffic from the SSH bastion host/instance.'
+    Value: !Ref SecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityGroup'
+  IPAddress:
+    Description: 'The public IP address of the SSH bastion host/instance.'
+    Value: !Ref EIP
+    Export:
+      Name: !Sub '${AWS::StackName}-IPAddress'
