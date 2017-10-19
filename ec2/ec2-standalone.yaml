@@ -111,8 +111,8 @@ Resources:
       Roles:
       - !Ref IAMRole
   IAMRole:
-    Condition: AWXManaged
     Type: 'AWS::IAM::Role'
+    Condition: AWXManaged
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -124,8 +124,9 @@ Resources:
           Action:
           - 'sts:AssumeRole'
       Path: '/'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess'
     Condition: SSMManaged
-    Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -133,7 +134,7 @@ Resources:
         - Effect: Allow
           Principal:
             Service:
-            - 'ssm.amazonaws.com'
+            - 'ec2.amazonaws.com'
           Action:
           - 'sts:AssumeRole'
       Path: '/'
@@ -148,7 +149,6 @@ Resources:
       SecurityGroupIds:
       - !Ref SecurityGroup
       KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
-      Condition: SSMManaged
       UserData:
         'Fn::Base64': !Sub |
            #!/bin/bash -x
@@ -157,16 +157,6 @@ Resources:
            wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_amd64/amazon-ssm-agent.deb
            sudo dpkg -i amazon-ssm-agent.deb
            sudo systemctl enable amazon-ssm-agent
-           apt-get -y install python-pip
-           pip install awscli
-           pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
-           cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource InstanceResource
-           cfn-init -v --stack ${AWS::StackName} --resource InstanceResource --region ${AWS::Region}
-      Condition: AWXManaged
-      UserData:
-        'Fn::Base64': !Sub |
-           #!/bin/bash -x
-           apt-get update
            apt-get -y install python-pip
            pip install awscli
            pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
