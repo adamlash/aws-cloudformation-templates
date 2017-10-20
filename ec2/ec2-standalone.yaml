@@ -103,7 +103,7 @@ Resources:
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
-      CidrIp: '0.0.0.0/0'
+      CidrIp: !Ref SSHAccessCIDR
   InstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
     Properties:
@@ -152,7 +152,9 @@ Resources:
       UserData:
         'Fn::Base64': !Sub |
            #!/bin/bash -x
+           apt-add-repository ppa:ansible/ansible -y
            apt-get update
+           apt-get install ansible -y
            cd /tmp
            wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_amd64/amazon-ssm-agent.deb
            sudo dpkg -i amazon-ssm-agent.deb
