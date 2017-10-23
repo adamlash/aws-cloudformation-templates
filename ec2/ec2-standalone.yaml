@@ -112,7 +112,6 @@ Resources:
       - !Ref IAMRole
   IAMRole:
     Type: 'AWS::IAM::Role'
-    Condition: AWXManaged
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -125,23 +124,10 @@ Resources:
           - 'sts:AssumeRole'
       Path: '/'
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess'
-    Condition: SSMManaged
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-            - 'ec2.amazonaws.com'
-          Action:
-          - 'sts:AssumeRole'
-      Path: '/'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM'
+        - !If [AWXManaged, 'arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM', !Ref 'AWS::NoValue']
   InstanceResource:
     Type: 'AWS::EC2::Instance'
+    Condition: AWXManaged
     Properties:
       IamInstanceProfile: !Ref InstanceProfile
       ImageId: !Ref AMIID
@@ -149,7 +135,6 @@ Resources:
       SecurityGroupIds:
       - !Ref SecurityGroup
       KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
-      Condition: AWXManaged
       UserData:
         'Fn::Base64': !Sub |
            #!/bin/bash -x
@@ -167,7 +152,14 @@ Resources:
            pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
            cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource InstanceResource
            cfn-init -v --stack ${AWS::StackName} --resource InstanceResource --region ${AWS::Region}
-      Condition: SSMManaged
+    Condition: SSMManaged
+    Properties:
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId: !Ref AMIID
+      InstanceType: !Ref InstanceType
+      SecurityGroupIds:
+      - !Ref SecurityGroup
+      KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
       UserData:
         'Fn::Base64': !Sub |
            #!/bin/bash -x
@@ -183,13 +175,11 @@ Resources:
            pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
            cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource InstanceResource
            cfn-init -v --stack ${AWS::StackName} --resource InstanceResource --region ${AWS::Region}
-      SubnetId:
+            SubnetId:
         'Fn::ImportValue': !Sub '${ParentVPCStack}-${SubnetName}'
       Tags:
       - Key: Name
         Value: !Ref Name
-      - Key: Management
-        Value: Ansible-AWX
     CreationPolicy:
       ResourceSignal:
         Count: 1
