@@ -142,7 +142,6 @@ Resources:
         - 'arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM'
   InstanceResource:
     Type: 'AWS::EC2::Instance'
-    Condition: AWXManaged
     Properties:
       IamInstanceProfile: !Ref InstanceProfile
       ImageId: !Ref AMIID
@@ -150,6 +149,7 @@ Resources:
       SecurityGroupIds:
       - !Ref SecurityGroup
       KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
+      Condition: AWXManaged
       UserData:
         'Fn::Base64': !Sub |
            #!/bin/bash -x
@@ -167,23 +167,7 @@ Resources:
            pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
            cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource InstanceResource
            cfn-init -v --stack ${AWS::StackName} --resource InstanceResource --region ${AWS::Region}
-      SubnetId:
-        'Fn::ImportValue': !Sub '${ParentVPCStack}-${SubnetName}'
-      Tags:
-      - Key: Name
-        Value: !Ref Name
-    CreationPolicy:
-      ResourceSignal:
-        Count: 1
-        Timeout: PT10M
-    Condition: SSMManaged
-    Properties:
-      IamInstanceProfile: !Ref InstanceProfile
-      ImageId: !Ref AMIID
-      InstanceType: !Ref InstanceType
-      SecurityGroupIds:
-      - !Ref SecurityGroup
-      KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
+      Condition: AWXManaged
       UserData:
         'Fn::Base64': !Sub |
            #!/bin/bash -x
@@ -204,6 +188,8 @@ Resources:
       Tags:
       - Key: Name
         Value: !Ref Name
+      - Key: Management
+        Value: Ansible-AWX
     CreationPolicy:
       ResourceSignal:
         Count: 1
