@@ -130,7 +130,7 @@ Resources:
           - 'sts:AssumeRole'
       Path: '/'
       ManagedPolicyArns:
-        - !If [AWXManaged, !Ref 'AWS::NoValue', 'arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM']
+        - !If [SSMManaged, 'arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM', !Ref 'AWS::NoValue']
   InstanceResource:
     Type: 'AWS::EC2::Instance'
     Properties:
