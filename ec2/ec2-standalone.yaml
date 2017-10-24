@@ -172,6 +172,8 @@ Resources:
          pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
          cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource InstanceResource
          cfn-init -v --stack ${AWS::StackName} --resource InstanceResource --region ${AWS::Region}
+      SubnetId:
+        'Fn::ImportValue': !Sub '${ParentVPCStack}-${SubnetName}'         
       Tags:
       - Key: Name
         Value: !Ref Name
