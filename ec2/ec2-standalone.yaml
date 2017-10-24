@@ -173,12 +173,16 @@ Resources:
          cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource InstanceResource
          cfn-init -v --stack ${AWS::StackName} --resource InstanceResource --region ${AWS::Region}
       SubnetId:
-        'Fn::ImportValue': !Sub '${ParentVPCStack}-${SubnetName}'         
+        'Fn::ImportValue': !Sub '${ParentVPCStack}-${SubnetName}'
       Tags:
       - Key: Name
         Value: !Ref Name
       - Key: Management
         Value: !If [AWXManaged, 'AWX', 'SSM']
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
   MountPoint:
     Type: "AWS::EC2::VolumeAttachment"
     Condition: DiskAttach
@@ -195,7 +199,3 @@ Resources:
       Size: !Ref DataDisk
       AvailabilityZone:
         !GetAtt InstanceResource.AvailabilityZone
-    CreationPolicy:
-      ResourceSignal:
-        Count: 1
-        Timeout: PT10M
