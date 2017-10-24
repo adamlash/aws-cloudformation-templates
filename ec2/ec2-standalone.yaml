@@ -60,6 +60,10 @@ Parameters:
     - SubnetCDMZ
     - SubnetCPublic
     - SubnetCPrivate
+  DataDisk:
+    Description: 'Extra EBS volume attached as part of the spin. Specify size of disk or leave blank for no disk.'
+    Type: String
+    Default: ''
   AWXorSSM:
     Description: 'Is this server going to be managed via Ansible AWX or Amazon SSM'
     Type: String
@@ -73,6 +77,7 @@ Conditions:
   HasNotSSHAccessGroup: !Not [!Equals [!Ref SSHAccessCIDR, '']]
   AWXManaged: !Equals [ !Ref AWXorSSM, AWX ]
   SSMManaged: !Equals [ !Ref AWXorSSM, SSM ]
+  DiskAttach: !Not [!Equals [!Ref DataDisk, '']]
 Resources:
   ElasticIP:
     Type: 'AWS::EC2::EIP'
@@ -180,6 +185,24 @@ Resources:
       Tags:
       - Key: Name
         Value: !Ref Name
+      - Key: Management
+        Value: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
+  MountPoint:
+    Type: "AWS::EC2::VolumeAttachment"
+    Condition: DiskAttach
+    Properties:
+      InstanceId:
+        !Ref InstanceResource
+      VolumeId:
+        !Ref NewVolume
+      Device: /dev/sdh
+  NewVolume:
+    Type: "AWS::EC2::Volume"
+    Condition: DiskAttach
+    Properties:
+      Size: 100
+      AvailabilityZone:
+        !GetAtt InstanceResource.AvailabilityZone
     CreationPolicy:
       ResourceSignal:
         Count: 1
