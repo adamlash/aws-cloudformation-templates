@@ -1,0 +1,120 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'EC2: Standalone EC2 server, Options to allow AWS SSM or Ansible AWX to control build'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: 'Parent Stacks'
+      Parameters:
+      - ParentVPCStack
+    - Label:
+        default: 'EC2 Parameters'
+      Parameters:
+      - InstanceType
+      - AMIID
+      - Name
+      - SubnetName
+      - KeyName
+      - SSHAccessGroup
+      - SSHAccessCIDR
+      - DataDisk
+    - Label:
+        default: 'Configuration Management'
+      Parameters:
+      - ParentAWXStack
+      - AWXorSSM
+Parameters:
+  ParentVPCStack:
+    Description: 'Stack name of parent VPC stack based on vpc.yml template.'
+    Type: String
+  AMIID:
+    Description: 'AMI for ASG'
+    Type: String
+  KeyName:
+    Description: '(Optional) AWS Builtin Key pair of the ec2-user to establish a SSH connection to the EC2 instance.'
+    Type: String
+    Default: ''
+  InstanceType:
+    Description: 'The instance type for the EC2 instance.'
+    Type: String
+    Default: 't2.micro'
+  Name:
+    Description: '(Optional) The name for the EC2 instance.'
+    Type: String
+    Default: ''
+  SSHAccessGroup:
+    Description: '(Optional) SSH Access Security Group Name'
+    Type: String
+    Default: ''
+  SSHAccessCIDR:
+    Description: '(Optional) SSH Access IP address CIDR, If no SSH Security Group Specified'
+    Type: String
+    Default: ''
+  SubnetName:
+    Description: 'Subnet name of parent VPC stack based on vpc.yml template.'
+    Type: String
+    Default: SubnetAPublic
+    AllowedValues:
+    - SubnetADMZ
+    - SubnetAPublic
+    - SubnetAPrivate
+    - SubnetBDMZ
+    - SubnetBPublic
+    - SubnetBPrivate
+    - SubnetCDMZ
+    - SubnetCPublic
+    - SubnetCPrivate
+  DataDisk:
+    Description: 'Extra EBS volume attached as part of the spin. Specify size of disk or leave blank for no disk.'
+    Type: String
+    Default: ''
+  AWXorSSM:
+    Description: 'Is this server going to be managed via Ansible AWX or Amazon SSM'
+    Type: String
+    Default: SSM
+    AllowedValues:
+    - AWX
+    - SSM
+  ParentAWXStack:
+    Description: 'Stack name of parent AWX EC2 stack for SSH Access from that SG. (Optional)'
+    Type: String
+    Default: ''
+Conditions:
+  HasKeyName: !Not [!Equals [!Ref KeyName, '']]
+  HasSSHAccessGroup: !Not [!Equals [!Ref SSHAccessGroup, '']]
+  HasNotSSHAccessGroup: !Not [!Equals [!Ref SSHAccessCIDR, '']]
+  AWXManaged: !Equals [ !Ref AWXorSSM, AWX ]
+  SSMManaged: !Equals [ !Ref AWXorSSM, SSM ]
+  DiskAttach: !Not [!Equals [!Ref DataDisk, '']]
+  HasParentAWXStack: !Not [!Equals [!Ref ParentAWXStack, '']]
+Resources:
+  Redis:
+    Type: "AWS::ElastiCache::CacheCluster"
+    Properties:
+      AutoMinorVersionUpgrade: Boolean
+      AZMode: String
+      CacheNodeType: String
+      CacheParameterGroupName: String
+      CacheSecurityGroupNames:
+        - String
+      CacheSubnetGroupName: String
+      ClusterName: String
+      Engine: String
+      EngineVersion: String
+      NotificationTopicArn: String
+      NumCacheNodes: Integer
+      Port: Integer
+      PreferredAvailabilityZone: String
+      PreferredAvailabilityZones:
+        - String
+      PreferredMaintenanceWindow: String
+      SnapshotArns:
+        - String
+      SnapshotName: String
+      SnapshotRetentionLimit: Integer
+      SnapshotWindow: String
+      Tags:
+        - Resource Tag
+      VpcSecurityGroupIds:
+        - String
