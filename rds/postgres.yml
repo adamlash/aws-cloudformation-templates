@@ -1,0 +1,177 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'RDS: Postgres, Options for HA'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: 'Parent Stacks'
+      Parameters:
+      - ParentVPCStack
+    - Label:
+        default: 'RDS Infrastructure Params'
+      Parameters:
+      - InstanceType
+      - Name
+      - SubnetName
+      - PostgresAccessGroup
+      - PostgresAccessCIDR
+    - Label:
+        default: 'RDS Config Params'
+      Parameters:
+      - MultiAZ
+      - MinorUpgrade
+      - EngineVer
+      - StorageSize
+      - MasterUserName
+      - MasterPassword
+Parameters:
+  ParentVPCStack:
+    Description: 'Stack name of parent VPC stack based on vpc.yml template.'
+    Type: String
+  InstanceType:
+    Description: 'The instance type for the Postgres Instance.'
+    Type: String
+    Default: 'db.t2.micro'
+  Name:
+    Description: 'The name for the Postgres Instance.'
+    Type: String
+    Default: ''
+  PostgresAccessGroup:
+    Description: '(Optional) Postgres Access Security Group Name'
+    Type: String
+    Default: ''
+  PostgresAccessCIDR:
+    Description: '(Optional) Postgres Access IP address CIDR, If no Security Group Specified'
+    Type: String
+    Default: ''
+  SubnetName:
+    Description: 'Subnet name of parent VPC stack based on vpc.yml template.'
+    Type: String
+    Default: DMZ
+    AllowedValues:
+    - DMZ
+    - Public
+    - Private
+  MinorUpgrade:
+    Description: 'Allow Minor Upgrades?'
+    Type: String
+    Default: 'True'
+    AllowedValues:
+    - 'True'
+    - 'False'
+  StorageSize:
+    Description: 'Allocated Storage Size, in GB. Min 100GB'
+    Type: String
+    Default: '100'
+  EngineVer:
+    Description: 'Postgres Version'
+    Type: String
+    Default: '9.6.5'
+    AllowedValues:
+    - '9.6.5'
+    - '9.6.3'
+    - '9.6.2'
+    - '9.6.1'
+    - '9.5.9'
+  MultiAZ:
+    Description: 'Multi AZ/High Availability?'
+    Type: String
+    Default: 'False'
+    AllowedValues:
+    - 'True'
+    - 'False'
+  MasterUserName:
+    Description: 'Master Username'
+    Type: String
+    Default: ''
+  MasterPassword:
+    Description: 'Master Password - This is NOT echoed/outputted'
+    Type: String
+    Default: ''
+    NoEcho: True
+Conditions:
+  HasPostgresAccessGroup: !Not [!Equals [!Ref PostgresAccessGroup, '']]
+  HasNotPostgresAccessGroup: !Not [!Equals [!Ref PostgresAccessCIDR, '']]
+Resources:
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Ref Name
+      VpcId:
+        'Fn::ImportValue': !Sub '${ParentVPCStack}-VPC'
+  SecurityGroupInPostgresGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: HasPostgresAccessGroup
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref PostgresAccessGroup
+  SecurityGroupInPostgresWorld:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: HasNotPostgresAccessGroup
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      CidrIp: !Ref PostgresAccessCIDR
+  SubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: 'Postgres Subnet Group'
+      SubnetIds:
+        - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetA${SubnetName}'
+        - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetB${SubnetName}'
+        - 'Fn::ImportValue': !Sub '${ParentVPCStack}-SubnetC${SubnetName}'
+      Tags:
+      - Key: Name
+        Value: !Ref Name
+  Postgres:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      AllocatedStorage: !Ref StorageSize
+      # AllowMajorVersionUpgrade: Boolean - Turned to False, for simplicity
+      AutoMinorVersionUpgrade: !Ref MinorUpgrade
+      # AvailabilityZone: String - No need to specify AZ
+      # BackupRetentionPeriod: String - Keeping Default for now
+      # CharacterSetName: String - Oracle Setting
+      CopyTagsToSnapshot: True
+      # DBClusterIdentifier: String - Seems like this is for Aurora
+      DBInstanceClass: !Ref InstanceType
+      DBInstanceIdentifier: !Ref Name
+      DBName: !Ref Name
+      # DBParameterGroupName: String - No Param group right now, will put in though
+      #DBSecurityGroups: - Non-VPC SGs
+      #  - String
+      # DBSnapshotIdentifier: String - for restoring from a snap, not required.
+      DBSubnetGroupName: !Ref SubnetGroup
+      # Domain: String - for MSSQL
+      # DomainIAMRoleName: String - for MSSQL
+      Engine: postgres
+      EngineVersion: !Ref EngineVer
+      # Iops: Number - not using provisioned iops for this
+      # KmsKeyId: String - no KMS encryption
+      # LicenseModel: String - no licence model
+      MasterUsername: !Ref MasterUserName
+      MasterUserPassword: !Ref MasterPassword
+      # MonitoringInterval: Integer - Default Monitoring for now
+      # MonitoringRoleArn: String - Using Default above, not needed
+      MultiAZ: !Ref MultiAZ
+      # OptionGroupName: String - Not Required for now
+      # Port: String -Default Port
+      # PreferredBackupWindow: String - Default Backup Windows
+      # PreferredMaintenanceWindow: String - Default Maintenance Windows
+      # PubliclyAccessible: Boolean - Default outside default VPC is False, keeping False for now.
+      # SourceDBInstanceIdentifier: String - No read replicas in this setup
+      # SourceRegion: String - No read replicas, reffed from above
+      # StorageEncrypted: Boolean - no KMS encryption
+      # StorageType: String - Standard is fine for most use cases
+      Tags:
+      - Key: Name
+        Value: !Ref Name
+      # Timezone: String - MSSQL only feature
+      VPCSecurityGroups:
+        - !Ref SecurityGroup
